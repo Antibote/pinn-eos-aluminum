@@ -56,22 +56,32 @@ python run.py
 
 ## Итоговые метрики
 
-| Модель | MAE P | MAE E | Нарушения физики, % | Размер, МБ | Время на 10⁵ запросов, с |
-|---|---|---|---|---|---|
-| Baseline (билинейная интерполяция) | | | | | |
-| Vanilla MLP | | | | | |
-| PINN | | | | | |
+Все модели — на одном test (674 826 узлов таблицы, не участвовавших в обучении), функцией `eos.metrics.evaluate`.
+Ошибка P — |ΔP|/P, ошибка e — |Δe|/max(|e|, 1 кДж/г). Полная таблица — `artifacts/metrics_final.csv` (раздел 4.5).
+
+| Модель | Ошибка P, медиана / p99 | Ошибка e, медиана / p99 | ∂P/∂ρ ≤ 0 | ∂e/∂T < 0 | Размер, МБ | Время на 10⁵ запросов, с |
+|---|---|---|---|---|---|---|
+| Baseline (билинейная интерполяция) | 0.0005% / 0.044% | 0.004% / 0.17% | 0.047% | 0.46% | 34.5 | 0.067 (CPU) |
+| Vanilla MLP 256×4 | 2.2% / 22% | 1.9% / 34% | 3.7% | 12.2% | 0.76 | 0.021 (GPU) |
+| **PINN 256×4 (GELU, MSE)** | **0.22% / 2.7%** | **0.21% / 4.2%** | **0%** | **0.001%** | 0.76 | 0.013 (GPU T4) |
+| PINN, веса float16 | 0.23% / 2.7% | 0.23% / 4.2% | 0% | 0% | 0.38 | — |
+
+Нарушения посчитаны конечными разностями; у Vanilla — во float32, часть из них — шум округления.
 
 ## Пример использования API
 
 ```python
+import sys; sys.path.insert(0, "src")
 from eos import EOSModel
 
-model = EOSModel("artifacts/model.pt", "artifacts/normalization.json")
-P, E = model.predict(rho, T)
-cs = model.sound_speed(rho, T)
-flags = model.check_physics(rho, T)
+model = EOSModel("artifacts/pinn.pt", "artifacts/normalization.json")   # device="cuda" — на GPU
+P, e = model.predict(rho, T)          # ГПа, кДж/г; rho в г/см³, T в K (числа или массивы)
+cs = model.sound_speed(rho, T)        # км/с
+flags = model.check_physics(rho, T)   # mechanical, thermal, sound, consistent, in_domain
 ```
+
+Без нашего кода: `torch.jit.load("artifacts/pinn_torchscript.pt")(rho, T)` или ONNX Runtime с `artifacts/pinn.onnx`
+(входы `rho`, `T` — float32, выходы `P`, `e`).
 
 ## Чек-лист сдачи
 
