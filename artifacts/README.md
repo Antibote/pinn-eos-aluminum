@@ -31,4 +31,4 @@
 
 ## Графики — `figures/`
 
-`eda_*`, `eos_sections.png` — данные (1.1–1.2); `baseline_errors.png` (1.4); `vanilla/` (2); `pinn_learning_curve.png`, `pinn_errors.png`, `pinn_sections.png`, `pinn_sound_speed.png` (3); `optimization.png` (5.3), `svd_compression.png` (5.4).
+`eda_*`, `eos_sections.png` — данные (1.1–1.2); `baseline_errors.png` (1.4); `vanilla/`, `vanilla_sound_speed.png` (2); `pinn_learning_curve.png`, `pinn_errors.png`, `pinn_sections.png`, `pinn_sound_speed.png` (3); `optimization.png` (5.3), `svd_compression.png` (5.4).
