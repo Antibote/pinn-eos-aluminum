@@ -1,0 +1,23 @@
+{
+  "model": "PINN (GELU, MSE, fixed)",
+  "n_test": 674826,
+  "err_P_median_%": 0.22191164395573845,
+  "err_P_mean_%": 0.41416088104381454,
+  "err_P_p99_%": 2.6776540388263177,
+  "err_P_max_%": 20.949157342427377,
+  "err_e_median_%": 0.21307570333997986,
+  "err_e_mean_%": 0.4826927804868013,
+  "err_e_p99_%": 4.194667407858345,
+  "err_e_max_%": 32.054297368266624,
+  "viol_dP_drho_%": 0.0,
+  "viol_de_dT_%": 0.0008891180837727058,
+  "viol_dP_dT_%": 10.018730754298145,
+  "time_1e5_s": 0.012893423000036819,
+  "size_MB": 0.7578201293945312,
+  "autograd_viol_dP_drho_%": 0.0,
+  "autograd_viol_de_dT_%": 0.003,
+  "autograd_viol_cs2_%": 0.0,
+  "autograd_viol_superluminal_%": 0.0,
+  "autograd_viol_cons_gt_0.1_%": 66.55799999999999,
+  "autograd_cons_median": 0.32907196262651195
+}
