@@ -82,7 +82,7 @@ flags = model.check_physics(rho, T)   # mechanical, thermal, sound, consistent, 
    L = L_data + λ_ρ·mean max(0, −∂lnP/∂lnρ) + λ_T·mean max(0, −∂e/∂lnT)/(|e|+1) + λ_c·L_c,
 
    где L_c — нарушение 0 < c_s < c, c_s² = (∂P/∂ρ)_T + T(∂P/∂T)²_ρ / (ρ²(∂e/∂T)_ρ). Производные — autograd по ln ρ, ln T; штрафы — в 1024 случайных точках всей области на каждом шаге; λ = 1 с разогревом. Неравенство для c_s записано без деления на ∂e/∂T, иначе обучение расходится на плато таблицы. Выбор активации, функции потерь и способа объединения градиентов (fixed / adaptive / PCGrad) — поэтапным поиском (`eos.pinn.search`).
-6. **Инференс и сжатие** — `EOSModel`, экспорт TorchScript/ONNX, float16 (без потерь), int8 (непригодно), дистилляция в 128×4 и 64×4: 64×4 в 27 раз меньше и в 9,9 раза быстрее на CPU (подробности — [`docs/README_Module5.md`](docs/README_Module5.md)).
+6. **Инференс и сжатие** — `EOSModel`, экспорт TorchScript/ONNX, float16 (без потерь), int8 (непригодно), SVD-сжатие внутренних слоёв 256→256 + дообучение с физическими штрафами: при r = 64 вдвое меньше (0,20 МБ) при ошибке 0,34% и без нарушений; дистилляция в 128×4 и 64×4: 64×4 в 27 раз меньше и в 9,9 раза быстрее на CPU (подробности — [`docs/README_Module5.md`](docs/README_Module5.md)).
 
 Подробно по модулям: [`docs/README_Module1.md`](docs/README_Module1.md) … [`docs/README_Module5.md`](docs/README_Module5.md).
 

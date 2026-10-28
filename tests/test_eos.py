@@ -96,3 +96,17 @@ def test_split_matches_saved_and_baseline_exact_on_train():
     tr = df.iloc[split["train"][::97]]
     P, _ = base.predict(tr["rho"].to_numpy(), tr["T"].to_numpy())
     np.testing.assert_allclose(P, tr["P"].to_numpy(), rtol=1e-9)
+
+
+def test_svd_keeps_io_layers_and_reloads(model, tmp_path):
+    from eos.inference import compress_svd, load_eosnet, save_net
+    net = compress_svd(model.net, 64)
+    assert net.net[0].in_features == 2 and net.net[-1].out_features == 2      # вход и выход не тронуты
+    assert sum(p.numel() for p in net.parameters()) < 0.55 * sum(p.numel() for p in model.net.parameters())
+    save_net(net, tmp_path / "svd.pt", fp16=True)
+    back = EOSModel.from_net(load_eosnet(tmp_path / "svd.pt", ART / "normalization.json"))
+    P0, _ = EOSModel.from_net(net).predict(2.7, 300.0)
+    P1, _ = back.predict(2.7, 300.0)
+    assert abs(P1 / P0 - 1) < 1e-2
+    full = compress_svd(model.net, 256)                                        # полный ранг — без потерь
+    np.testing.assert_allclose(EOSModel.from_net(full).predict(2.7, 300.0)[0], model.predict(2.7, 300.0)[0], rtol=1e-5)

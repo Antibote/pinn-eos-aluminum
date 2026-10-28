@@ -32,6 +32,8 @@ def load_eosnet(model_path: str | Path, norm_path: str | Path, device="cpu") -> 
     norm = EOSNormalizer.load(norm_path)
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
     model = EOSNet(norm, **ckpt["config"])
+    if ckpt.get("svd_rank"):          # сжатая SVD сеть: сначала та же структура слоёв
+        _make_lowrank(model, ckpt["svd_rank"])
     model.load_state_dict(ckpt["state_dict"])
     return model.to(device).eval()
 
@@ -327,5 +329,58 @@ def save_net(net: EOSNet, path: str | Path, fp16: bool = False) -> float:
     fp16=True — веса во float16 (вдвое меньше); ``load_eosnet`` / ``EOSModel`` читают оба варианта.
     """
     state = {k: (v.detach().cpu().half() if fp16 else v.detach().cpu()) for k, v in net.state_dict().items()}
-    torch.save({"state_dict": state, "config": net.config}, str(path))
+    torch.save({"state_dict": state, "config": net.config, "svd_rank": getattr(net, "svd_rank", None)}, str(path))
     return Path(path).stat().st_size / 2**20
+
+
+def _inner_linear_ids(net: EOSNet) -> list[int]:
+    """Номера внутренних слоёв hidden→hidden в ``net.net`` (первый 2→hidden и последний hidden→2 не входят)."""
+    h = net.config["hidden"]
+    return [i for i, m in enumerate(net.net)
+            if isinstance(m, torch.nn.Linear) and m.in_features == h and m.out_features == h]
+
+
+def _make_lowrank(net: EOSNet, rank: int) -> None:
+    """Заменяет внутренние Linear(h, h) на пару Linear(h, r, без смещения) → Linear(r, h) (на месте)."""
+    h = net.config["hidden"]
+    for i in _inner_linear_ids(net):
+        old = net.net[i]
+        net.net[i] = torch.nn.Sequential(torch.nn.Linear(h, rank, bias=False),
+                                         torch.nn.Linear(rank, h)).to(old.weight.device, old.weight.dtype)
+    net.svd_rank = rank
+
+
+def compress_svd(net: EOSNet, rank: int) -> EOSNet:
+    """Низкоранговое (SVD) сжатие внутренних слоёв 256→256; вход 2→256 и выход 256→2 не трогаются.
+
+    Каждая матрица W (h×h) заменяется лучшим приближением ранга r: W ≈ (U_r S_r) V_rᵀ —
+    два слоя h→r→h. Параметров в слое: r·2h + h вместо h² + h (при h = 256, r = 64 — в 2 раза меньше).
+
+    Args:
+        net: обученная ``EOSNet``.
+        rank: ранг r < hidden.
+
+    Returns:
+        Новая сеть (исходная не меняется); ``load_eosnet`` читает её чекпоинт по полю svd_rank.
+    """
+    small = copy.deepcopy(net)
+    ids = _inner_linear_ids(small)
+    weights = [(small.net[i].weight.detach().double(), small.net[i].bias.detach()) for i in ids]
+    _make_lowrank(small, rank)
+    with torch.no_grad():
+        for i, (W, b) in zip(ids, weights):
+            U, S, Vh = torch.linalg.svd(W, full_matrices=False)
+            down, up = small.net[i]
+            down.weight.copy_(Vh[:rank])                    # x → Vᵣᵀ x
+            up.weight.copy_(U[:, :rank] * S[:rank])          # → Uᵣ Sᵣ (Vᵣᵀ x)
+            up.bias.copy_(b)
+    return small
+
+
+def svd_energy(net: EOSNet, rank: int) -> list[float]:
+    """Доля «энергии» Σσ² первых r сингулярных чисел для каждого внутреннего слоя (1 — без потерь)."""
+    out = []
+    for i in _inner_linear_ids(net):
+        s = torch.linalg.svdvals(net.net[i].weight.detach().double())
+        out.append(float((s[:rank] ** 2).sum() / (s ** 2).sum()))
+    return out
