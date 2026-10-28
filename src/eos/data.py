@@ -3,6 +3,10 @@
 Данные — 20 файлов ``data/OblNN.txt``. Каждый файл — полная прямоугольная
 сетка по (ρ, T) в одной из областей 4 × 5 (4 диапазона плотности ×
 5 диапазонов температуры). Колонки: ``rho [g/cm^3], T [K], P [GPa], e [kJ/g]``.
+
+Диапазоны в шапках полуоткрытые: [min, max). Верхняя граница — первая точка
+соседней области, поэтому области стыкуются без повторов. Включена она только
+у крайних областей (T = 1e7 K и rho = 1e4 г/см³).
 """
 
 from __future__ import annotations
@@ -14,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
-COLUMNS = ["rho", "T", "P", "E"]
+COLUMNS = ["rho", "T", "P", "e"]
 
 
 def read_region(path: str | Path) -> tuple[pd.DataFrame, dict]:
@@ -24,7 +28,7 @@ def read_region(path: str | Path) -> tuple[pd.DataFrame, dict]:
         path: путь к файлу ``OblNN.txt``.
 
     Returns:
-        (df, meta): таблица с колонками rho, T, P, E и словарь параметров
+        (df, meta): таблица с колонками rho, T, P, e и словарь параметров
         из шапки файла (name, rho_range, T_range, grid).
     """
     path = Path(path)
@@ -50,8 +54,8 @@ def load_all(data_dir: str | Path = DATA_DIR) -> pd.DataFrame:
         data_dir: папка с файлами ``Obl*.txt``.
 
     Returns:
-        DataFrame с колонками rho, T, P, E, region (имя области, напр. "Obl07").
-        Точки на стыках областей могут встречаться дважды.
+        DataFrame с колонками rho, T, P, e, region (имя области, напр. "Obl07").
+        Повторов точек (rho, T) между областями нет.
 
     Raises:
         FileNotFoundError: если в папке нет ни одного файла ``Obl*.txt``.
@@ -74,7 +78,7 @@ def region_grid(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
         df: строки одной области (полная сетка rho × T).
 
     Returns:
-        (rho, T, P, E): rho формы (Nr,), T формы (Nt,), P и E формы (Nt, Nr),
+        (rho, T, P, e): rho формы (Nr,), T формы (Nt,), P и e формы (Nt, Nr),
         где P[i, j] = P(T[i], rho[j]).
 
     Raises:
@@ -86,5 +90,5 @@ def region_grid(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
         raise ValueError("Точки области не образуют полную сетку rho × T")
     s = df.sort_values(["T", "rho"])
     P = s["P"].to_numpy().reshape(len(T), len(rho))
-    E = s["E"].to_numpy().reshape(len(T), len(rho))
-    return rho, T, P, E
+    e = s["e"].to_numpy().reshape(len(T), len(rho))
+    return rho, T, P, e
