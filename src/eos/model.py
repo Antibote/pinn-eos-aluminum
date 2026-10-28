@@ -3,7 +3,8 @@
 Преобразования (выводы EDA, раздел 1.1):
 - входы: log10 rho и log10 T, линейно в [-1, 1] по физическим границам таблицы;
 - давление: log10 P, затем z-score;
-- энергия: asinh(e / e_scale) — «логарифм со знаком», затем z-score.
+- энергия: сдвиг до положительных значений и log10: log10(e + e_shift),
+  e_shift = 1 − e_min (min по train, кДж/г), затем z-score.
 
 Все преобразования выполняются внутри ``EOSNet``: на вход подаются физические
 rho [г/см³] и T [K], на выходе — P [ГПа] и e [кДж/г]. Поэтому autograd сразу
@@ -79,37 +80,41 @@ def region_weights(df: pd.DataFrame) -> np.ndarray:
     return w / w.mean()
 
 
-def compute_normalization(df: pd.DataFrame, weights: np.ndarray, e_scale: float = 1.0) -> dict:
+def compute_normalization(df: pd.DataFrame, weights: np.ndarray, e_shift: float | None = None) -> dict:
     """Коэффициенты нормировки (взвешенные среднее и std выходов).
 
     Args:
         df: обучающие строки.
         weights: веса из ``region_weights``.
-        e_scale: масштаб энергии в asinh(e / e_scale), кДж/г.
+        e_shift: сдвиг энергии в log10(e + e_shift), кДж/г. По умолчанию
+            1 − min(e): минимальная энергия переходит в log10(1) = 0.
 
     Returns:
         Словарь для ``normalization.json``.
     """
     lP = np.log10(df["P"].to_numpy())
-    ae = np.arcsinh(df["e"].to_numpy() / e_scale)
+    e = df["e"].to_numpy()
+    if e_shift is None:
+        e_shift = float(1.0 - e.min())
+    le = np.log10(e + e_shift)
 
     def wstat(x):
         m = np.average(x, weights=weights)
         return float(m), float(np.sqrt(np.average((x - m) ** 2, weights=weights)))
 
     lP_mean, lP_std = wstat(lP)
-    ae_mean, ae_std = wstat(ae)
+    le_mean, le_std = wstat(le)
     return {
         "lrho_min": LOG_RHO_BOUNDS[0], "lrho_max": LOG_RHO_BOUNDS[1],
         "lT_min": LOG_T_BOUNDS[0], "lT_max": LOG_T_BOUNDS[1],
         "lP_mean": lP_mean, "lP_std": lP_std,
-        "e_scale": e_scale, "ae_mean": ae_mean, "ae_std": ae_std,
+        "e_shift": e_shift, "le_mean": le_mean, "le_std": le_std,
         "units": {"rho": "g/cm^3", "T": "K", "P": "GPa", "e": "kJ/g"},
         "transforms": {
             "x_rho": "2*(log10(rho)-lrho_min)/(lrho_max-lrho_min)-1",
             "x_T": "2*(log10(T)-lT_min)/(lT_max-lT_min)-1",
             "y_P": "(log10(P)-lP_mean)/lP_std",
-            "y_e": "(asinh(e/e_scale)-ae_mean)/ae_std",
+            "y_e": "(log10(e+e_shift)-le_mean)/le_std",
         },
     }
 
@@ -155,7 +160,7 @@ class EOSNet(torch.nn.Module):
         """Физические P, e → нормированные выходы, форма (N, 2). Для loss по данным."""
         n = self.norm
         y_P = (torch.log10(P) - n["lP_mean"]) / n["lP_std"]
-        y_e = (torch.asinh(e / n["e_scale"]) - n["ae_mean"]) / n["ae_std"]
+        y_e = (torch.log10(e + n["e_shift"]) - n["le_mean"]) / n["le_std"]
         return torch.stack([y_P, y_e], dim=-1)
 
     def forward_norm(self, rho: torch.Tensor, T: torch.Tensor) -> torch.Tensor:
@@ -175,7 +180,7 @@ class EOSNet(torch.nn.Module):
         n = self.norm
         y = self.forward_norm(rho, T)
         P = 10 ** (y[:, 0] * n["lP_std"] + n["lP_mean"])
-        e = n["e_scale"] * torch.sinh(y[:, 1] * n["ae_std"] + n["ae_mean"])
+        e = 10 ** (y[:, 1] * n["le_std"] + n["le_mean"]) - n["e_shift"]
         return P, e
 
 

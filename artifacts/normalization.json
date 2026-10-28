@@ -5,9 +5,9 @@
   "lT_max": 7.0,
   "lP_mean": 3.5655199708057332,
   "lP_std": 2.8270178818344647,
-  "e_scale": 1.0,
-  "ae_mean": 4.42072940627475,
-  "ae_std": 5.890044289985931,
+  "e_shift": 47.79789501,
+  "le_mean": 2.5708316218267404,
+  "le_std": 1.364465301911728,
   "units": {
     "rho": "g/cm^3",
     "T": "K",
@@ -18,6 +18,6 @@
     "x_rho": "2*(log10(rho)-lrho_min)/(lrho_max-lrho_min)-1",
     "x_T": "2*(log10(T)-lT_min)/(lT_max-lT_min)-1",
     "y_P": "(log10(P)-lP_mean)/lP_std",
-    "y_e": "(asinh(e/e_scale)-ae_mean)/ae_std"
+    "y_e": "(log10(e+e_shift)-le_mean)/le_std"
   }
 }
