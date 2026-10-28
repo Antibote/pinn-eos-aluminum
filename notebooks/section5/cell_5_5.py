@@ -2,9 +2,17 @@
 # Обучение и autograd остаются в PyTorch; на C — только нормировка → слои Linear + GELU → обратная нормировка.
 # Зачем: уравнение состояния вызывают из расчётных кодов (C/Fortran) миллионы раз по одной точке на ячейку —
 # там важна задержка одного вызова и отсутствие зависимостей, а не пакет из 10^5 точек на GPU.
-import subprocess, time
-import eos.cinfer as ci
-importlib.reload(ci)
+import importlib, json, subprocess, sys, time
+import numpy as np, pandas as pd, torch
+import eos.normalize as nz, eos.model as em, eos.metrics as mt, eos.baseline as bl, eos.inference as inf, eos.cinfer as ci
+for m_ in (nz, em, mt, bl, inf, ci):
+    importlib.reload(m_)
+try:
+    import onnxruntime
+except ImportError:
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', 'onnx', 'onnxruntime'], check=True)
+NORM = ARTIFACTS / 'normalization.json'                       # всё нужное — здесь: ячейку можно запускать сразу после раздела 0
+test_df = df.iloc[np.load(ARTIFACTS / 'split.npz')['test']]
 
 C_DIR = ARTIFACTS / 'c'
 C_DIR.mkdir(exist_ok=True)
