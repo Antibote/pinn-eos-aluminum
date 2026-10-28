@@ -12,6 +12,7 @@
 | `pinn_int8w.pt` | int8-веса — для сравнения, точность хуже (4.4) |
 | `pinn_128x4.pt`, `pinn_64x4.pt` | дистиллированные PINN (5.2) |
 | `optimized/` | варианты из 5.3–5.4: float32 / float16 / ONNX для 256×4, 128×4, 64×4 и SVD r = 64, 32 |
+| `c/` | веса для инференса на C (`pinn.bin`, `pinn_svd64_fp16.bin`) и ONNX-версии (5.5) |
 | `vanilla_model.pt` | Vanilla MLP 256×4, SiLU (2.1) |
 | `normalization.json` | параметры нормировки `EOSNormalizer` (1.3) |
 | `split.npz` | общее разбиение train / val / test, seed 0 (1.3) |
@@ -23,7 +24,7 @@
 | `metrics_final.csv`, `metrics_final.md` | **итоговая таблица** Baseline / Vanilla / PINN / PINN float16 (4.5) |
 | `metrics_baseline.json`, `metrics_vanilla.json`, `metrics_pinn.json` | метрики каждой модели на test (1.4, 2.3, 3.4) |
 | `metrics_compare.csv` | сравнение с базовой моделью из 3.4 |
-| `metrics_speed.json`, `metrics_compression.csv`, `metrics_optimization.csv`, `metrics_svd.csv` | скорость, сжатие, оптимизация, SVD (4.2, 4.4, 5.3, 5.4) |
+| `metrics_speed.json`, `metrics_compression.csv`, `metrics_optimization.csv`, `metrics_svd.csv`, `metrics_c.csv` | скорость, сжатие, оптимизация, SVD, C (4.2, 4.4, 5.3–5.5) |
 | `violations_vanilla.json`, `compare_baseline_vanilla.csv` | нарушения и сравнение из раздела 2 |
 | `table_consistency.csv` | согласованность самой таблицы по областям (3.1) |
 | `regions_summary.csv`, `events.csv`, `seams.csv` | проверка областей, аномалии, стыки (1.1) |

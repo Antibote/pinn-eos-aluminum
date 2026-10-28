@@ -107,7 +107,7 @@ src/eos/
 csrc/                  инференс на C: eos_pinn.c/.h (прямой проход), example.c (вызов из расчётного кода)
 notebooks/             ноутбуки Colab и ячейки разделов 3–5 (cell_*.py), save_to_repo.py
 artifacts/             модели, нормировка, разбиение, метрики, графики — см. artifacts/README.md
-docs/                  README_Module1–5.md
+docs/                  README_Module1–5.md, Документация.docx, Инструкция для проверяющих.docx
 tests/                 pytest: нормировка, модель, физика, экспорт, разбиение
 data/                  таблицы Obl01–Obl20 (не в git)
 ```
@@ -132,5 +132,5 @@ data/                  таблицы Obl01–Obl20 (не в git)
 - [x] Docstrings у публичных функций и классов
 - [x] Итоговые визуализации (`artifacts/figures/`)
 - [x] Таблица сравнения baseline / Vanilla / PINN (`artifacts/metrics_final.md`)
-- [ ] Документация (Word или PDF)
+- [x] Документация: `docs/Документация.docx`, инструкция для проверяющих — `docs/Инструкция для проверяющих.docx`
 - [ ] Презентация
