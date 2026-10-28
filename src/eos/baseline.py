@@ -3,7 +3,7 @@
 Каждая из 20 областей — своя прямоугольная сетка, поэтому интерполятор строится
 для каждой области отдельно. Интерполяция идёт в координатах (log10 T, log10 rho):
 давление интерполируется как log10 P (оно всегда > 0 и меняется на 12 порядков),
-энергия E — как есть (бывает отрицательной).
+энергия e — как есть (бывает отрицательной).
 
 Диапазоны областей полуоткрытые: последний узел области лежит чуть ниже границы
 с соседней (например, 0.0971 при границе 0.1). Запросы в этом зазоре
@@ -59,10 +59,10 @@ def decimate_mask(n_T: int, n_rho: int) -> np.ndarray:
 
 
 class BilinearEOS:
-    """Билинейная интерполяция P(rho, T) и E(rho, T) по 20 областям таблицы.
+    """Билинейная интерполяция P(rho, T) и e(rho, T) по 20 областям таблицы.
 
     Args:
-        df: таблица из ``load_all()`` с колонками rho, T, P, E, region.
+        df: таблица из ``load_all()`` с колонками rho, T, P, e, region.
         decimate: если True, интерполяторы строятся только по обучающим узлам
             ``decimate_mask`` — для честной оценки точности на тестовых узлах.
     """
@@ -70,17 +70,17 @@ class BilinearEOS:
     def __init__(self, df: pd.DataFrame, decimate: bool = False):
         self.interp = {}
         for name, g in df.groupby("region"):
-            rho, T, P, E = region_grid(g)
+            rho, T, P, e = region_grid(g)
             if decimate:
                 test = decimate_mask(len(T), len(rho))
                 keep_T = ~test.all(axis=1)
                 keep_rho = ~test.all(axis=0)
                 rho, T = rho[keep_rho], T[keep_T]
-                P, E = P[np.ix_(keep_T, keep_rho)], E[np.ix_(keep_T, keep_rho)]
+                P, e = P[np.ix_(keep_T, keep_rho)], e[np.ix_(keep_T, keep_rho)]
             axes = (np.log10(T), np.log10(rho))
             self.interp[name] = (
                 RegularGridInterpolator(axes, np.log10(P), bounds_error=False, fill_value=None),
-                RegularGridInterpolator(axes, E, bounds_error=False, fill_value=None),
+                RegularGridInterpolator(axes, e, bounds_error=False, fill_value=None),
             )
 
     def predict(self, rho: np.ndarray, T: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -91,7 +91,7 @@ class BilinearEOS:
             T: температура, K, форма (N,).
 
         Returns:
-            (P, E): давление (ГПа) и удельная внутренняя энергия (кДж/г), форма (N,).
+            (P, e): давление (ГПа) и удельная внутренняя энергия (кДж/г), форма (N,).
 
         Raises:
             ValueError: если rho или T <= 0.
@@ -104,14 +104,14 @@ class BilinearEOS:
         i_T = np.clip(np.searchsorted(T_EDGES, T, side="right") - 1, 0, 4)
         q = np.column_stack([np.log10(T), np.log10(rho)])
         P = np.empty_like(rho)
-        E = np.empty_like(rho)
+        e = np.empty_like(rho)
         region_id = i_rho * 5 + i_T
         for rid in np.unique(region_id):
             m = region_id == rid
-            f_P, f_E = self.interp[region_name(rid // 5, rid % 5)]
+            f_P, f_e = self.interp[region_name(rid // 5, rid % 5)]
             P[m] = 10 ** f_P(q[m])
-            E[m] = f_E(q[m])
-        return P, E
+            e[m] = f_e(q[m])
+        return P, e
 
 
 def holdout_errors(df: pd.DataFrame) -> pd.DataFrame:
@@ -121,9 +121,9 @@ def holdout_errors(df: pd.DataFrame) -> pd.DataFrame:
         df: таблица из ``load_all()``.
 
     Returns:
-        DataFrame тестовых узлов: rho, T, P, E, region, P_pred, E_pred,
+        DataFrame тестовых узлов: rho, T, P, e, region, P_pred, e_pred,
         err_P — относительная ошибка |ΔP|/P,
-        err_E — ошибка |ΔE| / max(|E|, 1 кДж/г) (относительная, но без деления
+        err_e — ошибка |Δe| / max(|e|, 1 кДж/г) (относительная, но без деления
         на почти ноль там, где энергия меняет знак).
     """
     model = BilinearEOS(df, decimate=True)
@@ -135,9 +135,9 @@ def holdout_errors(df: pd.DataFrame) -> pd.DataFrame:
         q = pd.DataFrame({"T": TT[test], "rho": RR[test]})
         parts.append(q.merge(g, on=["rho", "T"]))
     t = pd.concat(parts, ignore_index=True)
-    t["P_pred"], t["E_pred"] = model.predict(t["rho"].to_numpy(), t["T"].to_numpy())
+    t["P_pred"], t["e_pred"] = model.predict(t["rho"].to_numpy(), t["T"].to_numpy())
     t["err_P"] = (t["P_pred"] - t["P"]).abs() / t["P"].abs()
-    t["err_E"] = (t["E_pred"] - t["E"]).abs() / np.maximum(t["E"].abs(), 1.0)
+    t["err_e"] = (t["e_pred"] - t["e"]).abs() / np.maximum(t["e"].abs(), 1.0)
     return t
 
 
@@ -148,9 +148,9 @@ def summarize_errors(t: pd.DataFrame) -> pd.DataFrame:
         t: результат ``holdout_errors``.
 
     Returns:
-        DataFrame со строками err_P и err_E.
+        DataFrame со строками err_P и err_e.
     """
-    s = t[["err_P", "err_E"]].agg(["median", "mean", lambda x: x.quantile(0.99), "max"]).T * 100
+    s = t[["err_P", "err_e"]].agg(["median", "mean", lambda x: x.quantile(0.99), "max"]).T * 100
     s.columns = ["median, %", "mean, %", "p99, %", "max, %"]
     return s
 
