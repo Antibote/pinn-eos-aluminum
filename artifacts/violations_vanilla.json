@@ -1,0 +1,9 @@
+{
+  "dP_drho_le0_frac": 0.11825,
+  "dP_dT_lt0_frac": 0.1249,
+  "de_dT_lt0_frac": 0.177,
+  "dP_drho_le0_n": 2365,
+  "dP_dT_lt0_n": 2498,
+  "de_dT_lt0_n": 3540,
+  "n_sample": 20000
+}
