@@ -16,6 +16,24 @@ from eos.baseline import decimate_mask
 from eos.data import region_grid
 from eos.normalize import EOSNormalizer
 
+class Sin(torch.nn.Module):
+    """Активация sin(x): гладкая, периодическая (как в SIREN)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sin(x)
+
+
+# Активации для EOSNet. Для PINN нужна гладкая: в loss входят производные сети,
+# и обучение идёт через вторые производные (у ReLU они нулевые, у SELU — разрыв в 0).
+ACTIVATIONS = {
+    "silu": torch.nn.SiLU,
+    "tanh": torch.nn.Tanh,
+    "gelu": torch.nn.GELU,
+    "selu": torch.nn.SELU,
+    "softplus": torch.nn.Softplus,
+    "sin": Sin,
+}
+
 LOG_RHO_BOUNDS = (-3.0, 4.0)  # log10 rho: 1e-3 … 1e4 г/см³
 LOG_T_BOUNDS = (-1.0, 7.0)  # log10 T: 0.1 … 1e7 K
 
@@ -80,15 +98,18 @@ class EOSNet(torch.nn.Module):
         norm: ``EOSNormalizer`` после ``fit`` или ``EOSNormalizer.load(...)``.
         hidden: ширина скрытых слоёв.
         layers: число скрытых слоёв.
+        activation: ключ ``ACTIVATIONS`` (silu, tanh, gelu, selu, softplus, sin).
     """
 
-    def __init__(self, norm: EOSNormalizer, hidden: int = 128, layers: int = 4):
+    def __init__(self, norm: EOSNormalizer, hidden: int = 128, layers: int = 4,
+                 activation: str = "silu"):
         super().__init__()
         self.norm = norm
+        self.config = {"hidden": hidden, "layers": layers, "activation": activation}
         dims = [2] + [hidden] * layers + [2]
         mods = []
         for a, b in zip(dims[:-1], dims[1:]):
-            mods += [torch.nn.Linear(a, b), torch.nn.SiLU()]
+            mods += [torch.nn.Linear(a, b), ACTIVATIONS[activation]()]
         self.net = torch.nn.Sequential(*mods[:-1])  # без активации на выходе
 
     def targets(self, P: torch.Tensor, e: torch.Tensor) -> torch.Tensor:
