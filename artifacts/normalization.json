@@ -1,23 +1,37 @@
 {
-  "lrho_min": -3.0,
-  "lrho_max": 4.0,
-  "lT_min": -1.0,
-  "lT_max": 7.0,
-  "lP_mean": 3.565519970805735,
-  "lP_std": 2.827017881834465,
-  "e_shift": 47.79789501,
-  "le_mean": 2.5708316218267413,
-  "le_std": 1.3644653019117288,
+  "x_cols": [
+    "log10_rho",
+    "log10_T"
+  ],
+  "x_min": [
+    -3.0,
+    -1.0
+  ],
+  "x_max": [
+    4.0,
+    7.0
+  ],
+  "x_range": [
+    -1.0,
+    1.0
+  ],
+  "y_cols": [
+    "log10_P",
+    "asinh_e_over_E0"
+  ],
+  "y_center": [
+    2.6690285282220985,
+    5.443480963872525
+  ],
+  "y_scale": [
+    2.0066819484820697,
+    6.287397627309818
+  ],
+  "E0": 1.0,
   "units": {
     "rho": "g/cm^3",
     "T": "K",
     "P": "GPa",
     "e": "kJ/g"
-  },
-  "transforms": {
-    "x_rho": "2*(log10(rho)-lrho_min)/(lrho_max-lrho_min)-1",
-    "x_T": "2*(log10(T)-lT_min)/(lT_max-lT_min)-1",
-    "y_P": "(log10(P)-lP_mean)/lP_std",
-    "y_e": "(log10(e+e_shift)-le_mean)/le_std"
   }
 }

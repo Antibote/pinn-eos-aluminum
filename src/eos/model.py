@@ -1,20 +1,12 @@
-"""Нормировка, разбиение данных и нейросетевая модель УРС.
+"""Разбиение данных, веса точек и нейросетевая модель УРС.
 
-Преобразования (выводы EDA, раздел 1.1):
-- входы: log10 rho и log10 T, линейно в [-1, 1] по физическим границам таблицы;
-- давление: log10 P, затем z-score;
-- энергия: сдвиг до положительных значений и log10: log10(e + e_shift),
-  e_shift = 1 − e_min (min по train, кДж/г), затем z-score.
-
-Все преобразования выполняются внутри ``EOSNet``: на вход подаются физические
-rho [г/см³] и T [K], на выходе — P [ГПа] и e [кДж/г]. Поэтому autograd сразу
-даёт производные в физических единицах (``derivatives``).
+Нормировка — ``eos.normalize.EOSNormalizer`` (log10 + MinMax для входов,
+log10 P и asinh e + RobustScaler для выходов). Она выполняется внутри ``EOSNet``:
+на вход подаются физические rho [г/см³] и T [K], на выходе — P [ГПа] и e [кДж/г].
+Поэтому autograd сразу даёт производные в физических единицах (``derivatives``).
 """
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -22,6 +14,7 @@ import torch
 
 from eos.baseline import decimate_mask
 from eos.data import region_grid
+from eos.normalize import EOSNormalizer
 
 LOG_RHO_BOUNDS = (-3.0, 4.0)  # log10 rho: 1e-3 … 1e4 г/см³
 LOG_T_BOUNDS = (-1.0, 7.0)  # log10 T: 0.1 … 1e7 K
@@ -80,92 +73,31 @@ def region_weights(df: pd.DataFrame) -> np.ndarray:
     return w / w.mean()
 
 
-def compute_normalization(df: pd.DataFrame, weights: np.ndarray, e_shift: float | None = None) -> dict:
-    """Коэффициенты нормировки (взвешенные среднее и std выходов).
-
-    Args:
-        df: обучающие строки.
-        weights: веса из ``region_weights``.
-        e_shift: сдвиг энергии в log10(e + e_shift), кДж/г. По умолчанию
-            1 − min(e): минимальная энергия переходит в log10(1) = 0.
-
-    Returns:
-        Словарь для ``normalization.json``.
-    """
-    lP = np.log10(df["P"].to_numpy())
-    e = df["e"].to_numpy()
-    if e_shift is None:
-        e_shift = float(1.0 - e.min())
-    le = np.log10(e + e_shift)
-
-    def wstat(x):
-        m = np.average(x, weights=weights)
-        return float(m), float(np.sqrt(np.average((x - m) ** 2, weights=weights)))
-
-    lP_mean, lP_std = wstat(lP)
-    le_mean, le_std = wstat(le)
-    return {
-        "lrho_min": LOG_RHO_BOUNDS[0], "lrho_max": LOG_RHO_BOUNDS[1],
-        "lT_min": LOG_T_BOUNDS[0], "lT_max": LOG_T_BOUNDS[1],
-        "lP_mean": lP_mean, "lP_std": lP_std,
-        "e_shift": e_shift, "le_mean": le_mean, "le_std": le_std,
-        "units": {"rho": "g/cm^3", "T": "K", "P": "GPa", "e": "kJ/g"},
-        "transforms": {
-            "x_rho": "2*(log10(rho)-lrho_min)/(lrho_max-lrho_min)-1",
-            "x_T": "2*(log10(T)-lT_min)/(lT_max-lT_min)-1",
-            "y_P": "(log10(P)-lP_mean)/lP_std",
-            "y_e": "(log10(e+e_shift)-le_mean)/le_std",
-        },
-    }
-
-
-def save_normalization(norm: dict, path: str | Path) -> None:
-    """Сохраняет коэффициенты нормировки в JSON."""
-    with open(path, "w") as f:
-        json.dump(norm, f, indent=2, ensure_ascii=False)
-
-
-def load_normalization(path: str | Path) -> dict:
-    """Читает коэффициенты нормировки из JSON."""
-    with open(path) as f:
-        return json.load(f)
-
-
 class EOSNet(torch.nn.Module):
     """MLP (rho, T) → (P, e) с нормировкой внутри.
 
     Args:
-        norm: словарь из ``compute_normalization`` / ``normalization.json``.
+        norm: ``EOSNormalizer`` после ``fit`` или ``EOSNormalizer.load(...)``.
         hidden: ширина скрытых слоёв.
         layers: число скрытых слоёв.
     """
 
-    def __init__(self, norm: dict, hidden: int = 128, layers: int = 4):
+    def __init__(self, norm: EOSNormalizer, hidden: int = 128, layers: int = 4):
         super().__init__()
-        self.norm = {k: v for k, v in norm.items() if isinstance(v, (int, float))}
+        self.norm = norm
         dims = [2] + [hidden] * layers + [2]
         mods = []
         for a, b in zip(dims[:-1], dims[1:]):
             mods += [torch.nn.Linear(a, b), torch.nn.SiLU()]
         self.net = torch.nn.Sequential(*mods[:-1])  # без активации на выходе
 
-    def inputs(self, rho: torch.Tensor, T: torch.Tensor) -> torch.Tensor:
-        """Физические rho, T → нормированные входы в [-1, 1], форма (N, 2)."""
-        n = self.norm
-        x_rho = 2 * (torch.log10(rho) - n["lrho_min"]) / (n["lrho_max"] - n["lrho_min"]) - 1
-        x_T = 2 * (torch.log10(T) - n["lT_min"]) / (n["lT_max"] - n["lT_min"]) - 1
-        return torch.stack([x_rho, x_T], dim=-1)
-
     def targets(self, P: torch.Tensor, e: torch.Tensor) -> torch.Tensor:
         """Физические P, e → нормированные выходы, форма (N, 2). Для loss по данным."""
-        n = self.norm
-        y_P = (torch.log10(P) - n["lP_mean"]) / n["lP_std"]
-        y_e = (torch.log10(e + n["e_shift"]) - n["le_mean"]) / n["le_std"]
-        return torch.stack([y_P, y_e], dim=-1)
+        return self.norm.torch_y(P, e)
 
     def forward_norm(self, rho: torch.Tensor, T: torch.Tensor) -> torch.Tensor:
         """Нормированные выходы сети, форма (N, 2)."""
-        return self.net(self.inputs(rho, T))
+        return self.net(self.norm.torch_x(rho, T))
 
     def forward(self, rho: torch.Tensor, T: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Предсказание в физических единицах.
@@ -177,11 +109,7 @@ class EOSNet(torch.nn.Module):
         Returns:
             (P, e): давление (ГПа) и энергия (кДж/г), форма (N,).
         """
-        n = self.norm
-        y = self.forward_norm(rho, T)
-        P = 10 ** (y[:, 0] * n["lP_std"] + n["lP_mean"])
-        e = 10 ** (y[:, 1] * n["le_std"] + n["le_mean"]) - n["e_shift"]
-        return P, e
+        return self.norm.torch_inverse_y(self.forward_norm(rho, T))
 
 
 def derivatives(model: EOSNet, rho: torch.Tensor, T: torch.Tensor,
