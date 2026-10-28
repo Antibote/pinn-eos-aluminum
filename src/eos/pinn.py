@@ -164,6 +164,7 @@ class Trainer:
 
     def fit(self, model, lam=None, steps=20_000, batch=8192, n_coll=4096, lr=2e-3,
             loss="mse", grad="fixed", ramp=0.2, adapt_every=100, adapt_alpha=0.1,
+            teacher=None, n_teacher=8192, kd_weight=1.0,
             eval_every=500, seed=0, verbose=True):
         """Обучает модель (Adam, косинусное затухание lr), возвращает историю.
 
@@ -184,6 +185,9 @@ class Trainer:
             ramp: доля шагов, за которую λ линейно растёт от 0 до заданных значений.
             adapt_every, adapt_alpha: для adaptive — как часто пересчитывать веса и
                 коэффициент скользящего среднего.
+            teacher: обученная ``EOSNet`` для дистилляции (или None). Тогда к loss добавляется
+                kd_weight · MSE между выходами ученика и учителя в n_teacher случайных точках
+                всей области — ученик учится и между узлами таблицы.
             eval_every: как часто считать val loss и сохранять лучшее состояние.
             seed: зерно для батчей и коллокации.
 
@@ -205,6 +209,11 @@ class Trainer:
         for step in range(1, steps + 1):
             b = torch.randint(0, len(self.idx_train), (batch,), device=dev, generator=gen)
             loss_d = self.data_loss(model, self.idx_train[b], self.w_train[b], kind=loss)
+            if teacher is not None:
+                rho_k, T_k = sample_collocation(n_teacher, device=dev, generator=gen)
+                with torch.no_grad():
+                    y_t = teacher.forward_norm(rho_k, T_k)
+                loss_d = loss_d + kd_weight * ((model.forward_norm(rho_k, T_k) - y_t) ** 2).mean()
             loss_p = torch.zeros((), device=dev)
             opt.zero_grad(set_to_none=True)
             if not lam:

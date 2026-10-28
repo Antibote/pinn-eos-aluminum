@@ -293,3 +293,36 @@ def load_int8_weights(path: str | Path, norm_path: str | Path, device="cpu") -> 
              for k in net.state_dict()}
     net.load_state_dict(state)
     return net.to(device).eval()
+
+
+class GpuFp16EOS:
+    """Инференс на GPU со смешанной точностью: умножения матриц во float16 (тензорные ядра),
+    log10, pow и sinh — во float32 (``torch.autocast``). Тот же ``predict(rho, T)``.
+    """
+
+    def __init__(self, net: EOSNet, chunk: int = 262_144):
+        self.net = copy.deepcopy(net).to("cuda").float().eval()
+        self.chunk = chunk
+
+    @torch.no_grad()
+    def predict(self, rho, T):
+        rho = np.ravel(np.asarray(rho, dtype=np.float32))
+        T = np.ravel(np.asarray(T, dtype=np.float32))
+        P, e = np.empty(len(rho)), np.empty(len(rho))
+        for i in range(0, len(rho), self.chunk):
+            r = torch.as_tensor(rho[i:i + self.chunk], device="cuda")
+            t = torch.as_tensor(T[i:i + self.chunk], device="cuda")
+            with torch.autocast("cuda", dtype=torch.float16):
+                p_, e_ = self.net(r, t)
+            P[i:i + self.chunk], e[i:i + self.chunk] = p_.float().cpu().numpy(), e_.float().cpu().numpy()
+        return P, e
+
+
+def save_net(net: EOSNet, path: str | Path, fp16: bool = False) -> float:
+    """Сохраняет сеть в формате ``pinn.pt`` ({"state_dict", "config"}), возвращает размер файла, МБ.
+
+    fp16=True — веса во float16 (вдвое меньше); ``load_eosnet`` / ``EOSModel`` читают оба варианта.
+    """
+    state = {k: (v.detach().cpu().half() if fp16 else v.detach().cpu()) for k, v in net.state_dict().items()}
+    torch.save({"state_dict": state, "config": net.config}, str(path))
+    return Path(path).stat().st_size / 2**20
