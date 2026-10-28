@@ -11,6 +11,8 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
+C_LIGHT_KMS = 299_792.458  # скорость света, км/с; c_s² в кДж/г = (км/с)²
+
 Predict = Callable[[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]
 
 
@@ -47,7 +49,8 @@ def physics_violations(predict: Predict, rho: np.ndarray, T: np.ndarray,
 
     Returns:
         Доли в процентах: viol_dP_drho_% — (∂P/∂ρ)_T ≤ 0,
-        viol_de_dT_% — (∂e/∂T)_ρ < 0, viol_dP_dT_% — (∂P/∂T)_ρ < 0.
+        viol_de_dT_% — (∂e/∂T)_ρ < 0, viol_dP_dT_% — (∂P/∂T)_ρ < 0,
+        viol_cs_% — не выполнено 0 < c_s < c, c_s² = ∂P/∂ρ + T (∂P/∂T)² / (ρ² ∂e/∂T).
     """
     P_rp, _ = predict(rho * (1 + h), T)
     P_rm, _ = predict(rho * (1 - h), T)
@@ -56,7 +59,10 @@ def physics_violations(predict: Predict, rho: np.ndarray, T: np.ndarray,
     dP_drho = (P_rp - P_rm) / (2 * h * rho)
     dP_dT = (P_tp - P_tm) / (2 * h * T)
     de_dT = (e_tp - e_tm) / (2 * h * T)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cs2 = dP_drho + T * dP_dT ** 2 / (rho ** 2 * de_dT)
     return {
+        "viol_cs_%": 100 * float(np.mean(~((cs2 > 0) & (cs2 < C_LIGHT_KMS ** 2)))),
         "viol_dP_drho_%": 100 * float(np.mean(dP_drho <= 0)),
         "viol_de_dT_%": 100 * float(np.mean(de_dT < 0)),
         "viol_dP_dT_%": 100 * float(np.mean(dP_dT < 0)),

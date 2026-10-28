@@ -9,8 +9,8 @@
   ограничена |r| ≤ 1 (иначе её квадрат на необученной сети перебивает все остальные слагаемые);
 - механическая устойчивость (∂P/∂ρ)_T > 0  ⇔  ∂lnP/∂lnρ > 0;
 - термическая устойчивость (∂e/∂T)_ρ ≥ 0 (нестрого: в таблице есть плато при T ≲ 7 K);
-- скорость звука c_s² = ∂P/∂ρ + T(∂P/∂T)² / (ρ² ∂e/∂T), 0 < c_s < c — проверяется
-  в ``physics_report`` (в loss не входит: следует из двух предыдущих при c_s ≪ c).
+- скорость звука c_s² = ∂P/∂ρ + T(∂P/∂T)² / (ρ² ∂e/∂T), 0 < c_s < c (c — скорость света);
+  в штрафе «sound» неравенство умножено на ρ² ∂e/∂T, чтобы не делить на ∂e/∂T ≈ 0.
 
 Таблица сама не вполне согласована: в холодной плотной части ρ²∂e/∂ρ ≈ 0.5 (P − T∂P/∂T).
 Поэтому вес штрафа согласованности подбирается перебором (компромисс с точностью).
@@ -26,9 +26,9 @@ import numpy as np
 import torch
 
 from eos.model import EOSNet, sample_collocation
+from eos.metrics import C_LIGHT_KMS  # скорость света, км/с
 
 LN10 = math.log(10.0)
-C_LIGHT_KMS = 299_792.458  # c, км/с; c_s² в кДж/г = (км/с)²
 
 
 def log_derivatives(model: EOSNet, rho: torch.Tensor, T: torch.Tensor,
@@ -63,19 +63,33 @@ def physics_terms(d: dict[str, torch.Tensor], rho: torch.Tensor, E0: float = 1.0
 
     Returns:
         cons — относительная невязка согласованности, |cons| ≤ 1;
-        mono_rho — max(0, −∂lnP/∂lnρ); mono_T — max(0, −∂e/∂lnT) / (|e| + E0).
+        mono_rho — max(0, −∂lnP/∂lnρ); mono_T — max(0, −∂e/∂lnT) / (|e| + E0);
+        sound — нарушение 0 < c_s² < c², записанное без деления на ∂e/∂T:
+            при ∂e/∂T ≥ 0 (его обеспечивает mono_T) это 0 < N < c² ρ² ∂e/∂lnT,
+            N = c_s² · ρ² ∂e/∂lnT = P a ρ ∂e/∂lnT + (P g)²; нарушение делится на сумму модулей
+            слагаемых, поэтому sound ∈ [0, 1) и не взрывается там, где ∂e/∂T ≈ 0.
     """
-    A, g = rho * d["e_r"] / d["P"], d["g"]
+    P, a, g, e_t = d["P"], d["a"], d["g"], d["e_t"]
+    A = rho * d["e_r"] / P
     cons = (A - 1 + g) / (A.abs() + 1 + g.abs())
-    mono_rho = torch.relu(-d["a"])
-    mono_T = torch.relu(-d["e_t"]) / (d["e"].abs() + E0)
-    return {"cons": cons, "mono_rho": mono_rho, "mono_T": mono_T}
+    mono_rho = torch.relu(-a)
+    mono_T = torch.relu(-e_t) / (d["e"].abs() + E0)
+    term_rho, term_T = P * a * rho * e_t, (P * g) ** 2
+    light = C_LIGHT_KMS ** 2 * rho ** 2 * e_t
+    N = term_rho + term_T
+    scale = term_rho.abs() + term_T + light.abs() + 1e-30
+    sound = (torch.relu(-N) + torch.relu(N - light)) / scale
+    return {"cons": cons, "mono_rho": mono_rho, "mono_T": mono_T, "sound": sound}
 
 
 def sound_speed2(d: dict[str, torch.Tensor], rho: torch.Tensor) -> torch.Tensor:
-    """c_s² [кДж/г = (км/с)²] = P a / ρ + (P g)² / (ρ² ∂e/∂lnT)."""
-    P = d["P"]
-    return P * d["a"] / rho + (P * d["g"]) ** 2 / (rho ** 2 * d["e_t"])
+    """c_s² [кДж/г = (км/с)²] = P a / ρ + (P g)² / (ρ² ∂e/∂lnT).
+
+    |∂e/∂lnT| < 1e-12 (плато таблицы) заменяется на +1e-12, чтобы не было деления на ноль.
+    """
+    P, e_t = d["P"], d["e_t"]
+    e_t = torch.where(e_t.abs() < 1e-12, torch.full_like(e_t, 1e-12), e_t)
+    return P * d["a"] / rho + (P * d["g"]) ** 2 / (rho ** 2 * e_t)
 
 
 def _data_loss_fn(err: torch.Tensor, kind: str, delta: float = 0.01) -> torch.Tensor:
@@ -139,7 +153,8 @@ class Trainer:
         """
         rho_c, T_c = sample_collocation(n_coll, device=self.rho.device, generator=generator)
         r = physics_terms(log_derivatives(model, rho_c, T_c), rho_c, model.norm.E0)
-        return {"cons": (r["cons"] ** 2).mean(), "mono_rho": r["mono_rho"].mean(), "mono_T": r["mono_T"].mean()}
+        return {"cons": (r["cons"] ** 2).mean(), "mono_rho": r["mono_rho"].mean(),
+                "mono_T": r["mono_T"].mean(), "sound": r["sound"].mean()}
 
     @staticmethod
     def _flat_grad(loss, params, retain_graph=True):
@@ -154,7 +169,7 @@ class Trainer:
 
         Args:
             model: ``EOSNet`` на устройстве данных.
-            lam: веса штрафов {"cons", "mono_rho", "mono_T"}; None или нули — vanilla.
+            lam: веса штрафов {"cons", "mono_rho", "mono_T", "sound"}; None или нули — vanilla.
             steps: число шагов оптимизатора.
             batch: точек данных в шаге.
             n_coll: точек коллокации в шаге (только если есть ненулевые λ).

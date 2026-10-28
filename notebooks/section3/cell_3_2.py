@@ -15,4 +15,4 @@ for a in ax:
 plt.tight_layout()
 plt.savefig(FIGURES / 'pinn_learning_curve.png', dpi=130, bbox_inches='tight')
 plt.show()
-save_to_repo('3.2: PINN (GELU, MSE, fixed) — веса и кривая обучения')
+save_to_repo('3.2: PINN (GELU, MSE, штрафы ∂P/∂ρ, ∂e/∂T, c_s) — веса и кривая обучения')
