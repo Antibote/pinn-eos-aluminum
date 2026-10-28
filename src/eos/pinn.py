@@ -185,7 +185,8 @@ class Trainer:
         hist = {"step": [], "train": [], "phys": [], "val": []}
         adapt = {k: 1.0 for k in lam}
         best, best_state, t0 = float("inf"), None, time.time()
-        run_d, run_p, run_n = 0.0, 0.0, 0
+        zero = torch.zeros((), device=dev)
+        run_d, run_p, run_n = zero.clone(), zero.clone(), 0
         for step in range(1, steps + 1):
             b = torch.randint(0, len(self.idx_train), (batch,), device=dev, generator=gen)
             loss_d = self.data_loss(model, self.idx_train[b], self.w_train[b], kind=loss)
@@ -207,10 +208,9 @@ class Trainer:
                 if grad == "pcgrad":
                     g_d = self._flat_grad(loss_d, params)
                     g_p = self._flat_grad(loss_p, params, retain_graph=False)
-                    dot = torch.dot(g_d, g_p)
-                    if dot < 0:
-                        g_d, g_p = (g_d - dot / (g_p.dot(g_p) + 1e-20) * g_p,
-                                    g_p - dot / (g_d.dot(g_d) + 1e-20) * g_d)
+                    dot = torch.clamp(torch.dot(g_d, g_p), max=0.0)   # 0, если конфликта нет
+                    g_d, g_p = (g_d - dot / (g_p.dot(g_p) + 1e-20) * g_p,
+                                g_p - dot / (g_d.dot(g_d) + 1e-20) * g_d)
                     g, i = g_d + g_p, 0
                     for p in params:
                         p.grad = g[i:i + p.numel()].view_as(p).clone(); i += p.numel()
@@ -220,15 +220,15 @@ class Trainer:
                     raise ValueError(f"неизвестный grad: {grad}")
             opt.step()
             sched.step()
-            run_d += loss_d.item(); run_p += loss_p.item(); run_n += 1
+            run_d += loss_d.detach(); run_p += loss_p.detach(); run_n += 1
             if step % eval_every == 0 or step == steps:
                 va = self.val_loss(model)
                 hist["step"].append(step); hist["val"].append(va)
-                hist["train"].append(run_d / run_n); hist["phys"].append(run_p / run_n)
-                run_d, run_p, run_n = 0.0, 0.0, 0
+                hist["train"].append(run_d.item() / run_n); hist["phys"].append(run_p.item() / run_n)
+                run_d, run_p, run_n = zero.clone(), zero.clone(), 0
                 if va < best:
                     best, best_state = va, copy.deepcopy(model.state_dict())
-                if verbose and (step % (eval_every * 10) == 0 or step == steps):
+                if verbose and (step % (eval_every * 2) == 0 or step == steps):
                     print(f"  шаг {step:6d}  train {hist['train'][-1]:.3e}  phys {hist['phys'][-1]:.3e}  "
                           f"val {va:.3e}  {time.time() - t0:.0f} с")
         model.load_state_dict(best_state)
@@ -331,7 +331,8 @@ def run_variant(trainer: Trainer, norm, cfg: dict, val_df, steps: int, device,
     Args:
         trainer: ``Trainer`` с данными.
         norm: ``EOSNormalizer``.
-        cfg: hidden, layers, activation, loss, grad, lam (веса штрафов), lr.
+        cfg: hidden, layers, activation, loss, grad, lam (веса штрафов);
+            необязательно lr, batch, n_coll.
         val_df: строки val для ``metrics.evaluate``.
         steps: число шагов обучения.
         device: устройство torch.
@@ -346,7 +347,8 @@ def run_variant(trainer: Trainer, norm, cfg: dict, val_df, steps: int, device,
     torch.manual_seed(seed)
     m = EOSNet(norm, hidden=cfg["hidden"], layers=cfg["layers"], activation=cfg["activation"]).to(device)
     h = trainer.fit(m, lam=cfg["lam"], steps=steps, loss=cfg["loss"], grad=cfg["grad"],
-                    lr=cfg.get("lr", 2e-3), seed=seed, verbose=verbose)
+                    lr=cfg.get("lr", 2e-3), batch=cfg.get("batch", 8192), n_coll=cfg.get("n_coll", 4096),
+                    seed=seed, verbose=verbose)
     met, _ = evaluate(numpy_predict(m), val_df, "")
     row = {"time_s": h["time_s"], "val_mse": h["best_val"],
            **{k: met[k] for k in met if k.startswith("err_")},
@@ -371,7 +373,7 @@ def pick_best(df, max_viol: float = 0.1) -> str:
 
 
 def search(trainer: Trainer, norm, base: dict, variants: dict, val_df, steps: int, device,
-           n_phys: int = 50_000, seed: int = 0, verbose: bool = False):
+           n_phys: int = 50_000, seed: int = 0, verbose: bool = True):
     """Перебор: каждый вариант — ``base``, в котором заменены указанные поля.
 
     Args:
@@ -390,6 +392,7 @@ def search(trainer: Trainer, norm, base: dict, variants: dict, val_df, steps: in
         print(f"=== {name}: " + ", ".join(f"{k}={cfg[k]}" for k in over))
         models[name], hists[name], row = run_variant(trainer, norm, cfg, val_df, steps, device,
                                                      n_phys=n_phys, seed=seed, verbose=verbose)
+        models[name] = models[name].cpu()  # освобождаем память GPU
         rows.append({"variant": name, **{k: str(v) for k, v in over.items()}, **row})
         print("    P med {err_P_median_%:.3f}%  e med {err_e_median_%:.3f}%  "
               "∂P/∂ρ≤0 {viol_dP_drho_%:.3f}%  ∂e/∂T<0 {viol_de_dT_%:.3f}%  {time_s:.0f} с".format(**row))
