@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pinn-eos-aluminum"
+version = "1.0.0"
+description = "PINN-аппроксимация широкодиапазонного уравнения состояния алюминия (ИТ КоР 5.0, кейс 02)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "torch",
+    "onnx",
+    "onnxruntime",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "seaborn", "jupyter", "tabulate"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

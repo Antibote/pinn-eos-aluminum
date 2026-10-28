@@ -11,7 +11,11 @@
 
 from __future__ import annotations
 
+import json
 import re
+import urllib.parse
+import urllib.request
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +23,34 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 COLUMNS = ["rho", "T", "P", "e"]
+DATA_URL = "https://disk.yandex.ru/d/iUSbYrJcsbXSbw"  # публичная папка организаторов
+DATA_ZIP = "/Материалы к хакатону.zip"
+
+
+def download(data_dir: str | Path = DATA_DIR) -> Path:
+    """Скачивает таблицы Obl01–Obl20 с Яндекс Диска организаторов, если их ещё нет.
+
+    Args:
+        data_dir: куда положить файлы ``Obl*.txt``.
+
+    Returns:
+        Путь к папке с данными.
+    """
+    data_dir = Path(data_dir)
+    if len(list(data_dir.glob("Obl*.txt"))) >= 20:
+        return data_dir
+    data_dir.mkdir(parents=True, exist_ok=True)
+    api = "https://cloud-api.yandex.net/v1/disk/public/resources/download?" + urllib.parse.urlencode(
+        {"public_key": DATA_URL, "path": DATA_ZIP})
+    href = json.load(urllib.request.urlopen(api))["href"]
+    zip_path = data_dir / "data.zip"
+    urllib.request.urlretrieve(href, zip_path)
+    with zipfile.ZipFile(zip_path) as z:
+        for name in z.namelist():
+            if Path(name).name.startswith("Obl") and name.endswith(".txt"):
+                (data_dir / Path(name).name).write_bytes(z.read(name))
+    zip_path.unlink()
+    return data_dir
 
 
 def read_region(path: str | Path) -> tuple[pd.DataFrame, dict]:

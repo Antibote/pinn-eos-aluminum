@@ -9,3 +9,5 @@ venv/
 *.ckpt
 runs/
 wandb/
+*.egg-info/
+.pytest_cache/

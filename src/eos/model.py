@@ -20,6 +20,7 @@ class Sin(torch.nn.Module):
     """Активация sin(x): гладкая, периодическая (как в SIREN)."""
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """sin(x) поэлементно."""
         return torch.sin(x)
 
 

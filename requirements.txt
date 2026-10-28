@@ -2,9 +2,11 @@ numpy
 pandas
 scipy
 scikit-learn
-matplotlib
-seaborn
 torch
 onnx
 onnxruntime
+matplotlib
+seaborn
+tabulate
 jupyter
+pytest

@@ -281,6 +281,7 @@ def numpy_predict(model: EOSNet, chunk: int = 262_144):
 
     @torch.no_grad()
     def predict(rho, T):
+        """(ρ, T) → (P, e) во float64, по кускам."""
         rho = torch.tensor(np.asarray(rho, dtype=np.float64), device=dev)
         T = torch.tensor(np.asarray(T, dtype=np.float64), device=dev)
         P, e = [], []

@@ -41,10 +41,12 @@ class RegionMeta:
 
     @property
     def band_rho(self):
+        """Номер диапазона плотности 0..3 (по номеру области)."""
         return (int(self.region[3:]) - 1) // 5
 
     @property
     def band_T(self):
+        """Номер диапазона температуры 0..4 (по номеру области)."""
         return (int(self.region[3:]) - 1) % 5
 
 
@@ -59,6 +61,7 @@ def parse_region_file(path):
     h = '\n'.join(header)
 
     def grab(pattern):
+        """Группы регулярного выражения из заголовка; ошибка, если строки нет."""
         m = re.search(pattern, h)
         if m is None:
             raise ValueError(f'{path}: в заголовке нет "{pattern}"')

@@ -83,7 +83,7 @@ class EOSModel:
         rho, T = np.broadcast_arrays(np.asarray(rho, dtype=np.float64), np.asarray(T, dtype=np.float64))
         if np.any(rho <= 0) or np.any(T <= 0):
             raise ValueError("rho и T должны быть > 0")
-        return rho.ravel(), T.ravel(), rho.shape
+        return np.array(rho.ravel()), np.array(T.ravel()), rho.shape   # копии: broadcast даёт read-only
 
     def in_domain(self, rho, T) -> np.ndarray:
         """True — точка внутри области таблицы (ρ 1e-3…1e4 г/см³, T 0.1…1e7 K); вне — экстраполяция."""
@@ -185,6 +185,7 @@ class _ExportNet(torch.nn.Module):
         self.E0 = float(n.E0)
 
     def forward(self, rho: torch.Tensor, T: torch.Tensor):
+        """(ρ [г/см³], T [K]) → (P [ГПа], e [кДж/г])."""
         lx = torch.stack([torch.log10(rho), torch.log10(T)], dim=-1)
         y = self.net(2.0 * (lx - self.x_min) / (self.x_max - self.x_min) - 1.0)
         raw = y * self.y_scale + self.y_center
@@ -222,6 +223,7 @@ class OnnxEOS:
         self.sess = ort.InferenceSession(str(path), providers=providers or ["CPUExecutionProvider"])
 
     def predict(self, rho, T):
+        """(ρ, T) → (P, e) через ONNX Runtime; массивы float64."""
         rho = np.ascontiguousarray(np.ravel(rho), dtype=np.float32)
         T = np.ascontiguousarray(np.ravel(T), dtype=np.float32)
         P, e = self.sess.run(None, {"rho": rho, "T": T})
@@ -306,6 +308,7 @@ class GpuFp16EOS:
 
     @torch.no_grad()
     def predict(self, rho, T):
+        """(ρ, T) → (P, e) со смешанной точностью на GPU; массивы float64."""
         rho = np.ravel(np.asarray(rho, dtype=np.float32))
         T = np.ravel(np.asarray(T, dtype=np.float32))
         P, e = np.empty(len(rho)), np.empty(len(rho))
