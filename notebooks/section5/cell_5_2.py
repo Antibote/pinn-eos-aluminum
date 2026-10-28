@@ -3,6 +3,7 @@
 STUDENTS = {'pinn_128x4': (128, 4), 'pinn_64x4': (64, 4)}
 STEPS_KD = 30_000                       # для пробного запуска — 3000
 LAM = {'mono_rho': 1, 'mono_T': 1, 'sound': 1}
+LR = 2e-3                               # если loss = nan — уменьшите до 5e-4
 
 def to_t(a):
     return torch.tensor(np.asarray(a), dtype=torch.float32, device=DEVICE)
@@ -16,7 +17,7 @@ for name, (hidden, layers) in STUDENTS.items():
     print(f'=== {name}: {hidden}×{layers}')
     torch.manual_seed(0)
     net = em.EOSNet(teacher.norm, hidden=hidden, layers=layers, activation='gelu').to(DEVICE)
-    hist = trainer.fit(net, lam=LAM, steps=STEPS_KD, n_coll=1024, teacher=teacher)
+    hist = trainer.fit(net, lam=LAM, steps=STEPS_KD, n_coll=1024, lr=LR, teacher=teacher)
     inf.save_net(net, ARTIFACTS / f'{name}.pt')
     students[name] = net
     print(f"    обучение {hist['time_s'] / 60:.1f} мин")

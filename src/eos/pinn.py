@@ -74,11 +74,13 @@ def physics_terms(d: dict[str, torch.Tensor], rho: torch.Tensor, E0: float = 1.0
     cons = (A - 1 + g) / (A.abs() + 1 + g.abs())
     mono_rho = torch.relu(-a)
     mono_T = torch.relu(-e_t) / (d["e"].abs() + E0)
-    term_rho, term_T = P * a * rho * e_t, (P * g) ** 2
-    light = C_LIGHT_KMS ** 2 * rho ** 2 * e_t
+    # во float64: P², c²ρ²∂e/∂lnT доходят до 1e24 и больше — во float32 возможно ∞/∞ = NaN
+    P64, a64, g64, e64, r64 = (x.double() for x in (P, a, g, e_t, rho))
+    term_rho, term_T = P64 * a64 * r64 * e64, (P64 * g64) ** 2
+    light = C_LIGHT_KMS ** 2 * r64 ** 2 * e64
     N = term_rho + term_T
-    scale = term_rho.abs() + term_T + light.abs() + 1e-30
-    sound = (torch.relu(-N) + torch.relu(N - light)) / scale
+    scale = term_rho.abs() + term_T + light.abs() + 1e-300
+    sound = ((torch.relu(-N) + torch.relu(N - light)) / scale).to(P.dtype)
     return {"cons": cons, "mono_rho": mono_rho, "mono_T": mono_T, "sound": sound}
 
 
@@ -242,6 +244,9 @@ class Trainer:
                     (loss_d + loss_p).backward()
                 else:
                     raise ValueError(f"неизвестный grad: {grad}")
+            for p in params:   # NaN/∞ в градиенте одного шага не должны испортить веса
+                if p.grad is not None:
+                    torch.nan_to_num_(p.grad, nan=0.0, posinf=0.0, neginf=0.0)
             opt.step()
             sched.step()
             run_d += loss_d.detach(); run_p += loss_p.detach(); run_n += 1
@@ -255,6 +260,9 @@ class Trainer:
                 if verbose and (step % (eval_every * 2) == 0 or step == steps):
                     print(f"  шаг {step:6d}  train {hist['train'][-1]:.3e}  phys {hist['phys'][-1]:.3e}  "
                           f"val {va:.3e}  {time.time() - t0:.0f} с")
+        if best_state is None:
+            raise RuntimeError("val loss всё время NaN/∞ — обучение разошлось; уменьшите lr "
+                               "(например, lr=5e-4) или веса штрафов")
         model.load_state_dict(best_state)
         hist["time_s"] = time.time() - t0
         hist["best_val"] = best
