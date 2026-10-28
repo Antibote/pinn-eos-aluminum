@@ -1,0 +1,23 @@
+{
+  "lrho_min": -3.0,
+  "lrho_max": 4.0,
+  "lT_min": -1.0,
+  "lT_max": 7.0,
+  "lP_mean": 3.5655199708057332,
+  "lP_std": 2.8270178818344647,
+  "e_scale": 1.0,
+  "ae_mean": 4.42072940627475,
+  "ae_std": 5.890044289985931,
+  "units": {
+    "rho": "g/cm^3",
+    "T": "K",
+    "P": "GPa",
+    "e": "kJ/g"
+  },
+  "transforms": {
+    "x_rho": "2*(log10(rho)-lrho_min)/(lrho_max-lrho_min)-1",
+    "x_T": "2*(log10(T)-lT_min)/(lT_max-lT_min)-1",
+    "y_P": "(log10(P)-lP_mean)/lP_std",
+    "y_e": "(asinh(e/e_scale)-ae_mean)/ae_std"
+  }
+}
