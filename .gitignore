@@ -11,3 +11,4 @@ runs/
 wandb/
 *.egg-info/
 .pytest_cache/
+csrc/build/

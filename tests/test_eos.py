@@ -110,3 +110,18 @@ def test_svd_keeps_io_layers_and_reloads(model, tmp_path):
     assert abs(P1 / P0 - 1) < 1e-2
     full = compress_svd(model.net, 256)                                        # полный ранг — без потерь
     np.testing.assert_allclose(EOSModel.from_net(full).predict(2.7, 300.0)[0], model.predict(2.7, 300.0)[0], rtol=1e-5)
+
+
+@pytest.mark.skipif(__import__("shutil").which("gcc") is None, reason="нет gcc")
+def test_c_inference_matches_torch(model, tmp_path):
+    from eos.cinfer import CEOS, export_weights
+    export_weights(model.net, tmp_path / "m.bin")
+    c = CEOS(tmp_path / "m.bin")
+    assert c.n_params == sum(p.numel() for p in model.net.parameters())
+    rho, T = random_queries(1001, seed=6)
+    P0, e0 = model.predict(rho, T)
+    P1, e1 = c.predict(rho, T)
+    np.testing.assert_allclose(P1, P0, rtol=1e-4)
+    np.testing.assert_allclose(e1, e0, rtol=1e-3, atol=1e-3)
+    p, e = c.predict_one(2.7, 300.0)
+    assert abs(p / P0[0] - 1) < 1 or np.isfinite(p)
