@@ -1,9 +1,9 @@
 {
-  "dP_drho_le0_frac": 0.11825,
-  "dP_dT_lt0_frac": 0.1249,
-  "de_dT_lt0_frac": 0.177,
-  "dP_drho_le0_n": 2365,
-  "dP_dT_lt0_n": 2498,
-  "de_dT_lt0_n": 3540,
+  "dP_drho_le0_frac": 0.03625,
+  "dP_dT_lt0_frac": 0.1518,
+  "de_dT_lt0_frac": 0.11285,
+  "dP_drho_le0_n": 725,
+  "dP_dT_lt0_n": 3036,
+  "de_dT_lt0_n": 2257,
   "n_sample": 20000
 }
